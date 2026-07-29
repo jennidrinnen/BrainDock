@@ -1,33 +1,35 @@
-# BrainDock with iCloud Drive Backup
+# BrainDock Version 1 Fixed
 
-This version stores BrainDock data in IndexedDB on the current device and includes manual backup and restore.
+This version includes:
 
-## How backup works on iPhone
+- Browser voice recording
+- Notes and recordings stored in IndexedDB
+- Projects and tasks
+- Full JSON backup
+- Full JSON restore
+- iPhone share sheet support for saving backups to iCloud Drive
+- GitHub Pages compatibility
+- Offline caching
+- Visible error reporting
 
-1. Open BrainDock in Safari.
-2. Tap **Backup**.
-3. The iOS share sheet opens.
-4. Choose **Save to Files**.
-5. Select **iCloud Drive**.
-6. Create or choose a folder named `BrainDock`.
-7. Save the JSON backup file.
+## Backup behavior
 
-## How restore works
+Backup exports a complete snapshot of everything currently stored on the device.
+Each backup filename includes a date and time, so it does not overwrite earlier backups unless you manually choose the same filename.
 
-1. Tap **Restore**.
-2. Pick a BrainDock JSON backup from the Files app.
-3. Confirm the replacement of the current local database.
+## Restore behavior
 
-## Storage model
+Restore replaces the current local BrainDock database with the selected backup after confirmation.
 
-- Working data: IndexedDB on the current browser/device
-- Backup: JSON file saved manually to iCloud Drive
-- Audio: Included inside the JSON backup as data URLs
+## Updating GitHub
 
-## Important notes
+Upload and replace these files in the repository root:
 
-- Clearing Safari website data can remove the local IndexedDB database.
-- Create backups regularly.
-- Large or numerous audio recordings will create large backup files.
-- Microphone access requires HTTPS or localhost.
-- Automatic background iCloud synchronization is not included. That would require CloudKit and an Apple Developer setup.
+- index.html
+- app.js
+- styles.css
+- manifest.json
+- sw.js
+- README.md
+
+After deployment, reload the site. If an old version remains cached, use a private browser tab once or clear the site's cached website data.

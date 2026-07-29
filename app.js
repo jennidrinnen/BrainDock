@@ -6,19 +6,23 @@
   const DB_VERSION = 1;
   const STORE_NAME = "appState";
   const STATE_KEY = "main";
-  const defaultProjects = ["Work", "Tallgrass", "School", "Personal", "Finance", "Ideas"];
+  const DEFAULT_PROJECTS = ["Work", "Tallgrass", "School", "Personal", "Finance", "Ideas"];
 
-  let db = null;
-  let state = { projects: defaultProjects, captures: [], tasks: [] };
+  let db;
+  let state = { projects: [...DEFAULT_PROJECTS], captures: [], tasks: [] };
   let recorder = null;
+  let recordingStream = null;
   let chunks = [];
-  let audioBlob = null;
-  let timerId = null;
-  let elapsed = 0;
+  let pendingAudioBlob = null;
+  let timerInterval = null;
+  let recordingStartedAt = 0;
   let deferredInstallPrompt = null;
 
   const $ = (id) => document.getElementById(id);
-  const safeText = (value) => String(value ?? "").trim();
+
+  function uid() {
+    return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+  }
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -29,11 +33,14 @@
       .replaceAll("'", "&#039;");
   }
 
-  function formatDate(iso) {
+  function formatDate(value) {
     try {
       return new Intl.DateTimeFormat(undefined, {
-        month: "short", day: "numeric", hour: "numeric", minute: "2-digit"
-      }).format(new Date(iso));
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit"
+      }).format(new Date(value));
     } catch {
       return "";
     }
@@ -42,21 +49,17 @@
   function openDatabase() {
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
-
       request.onupgradeneeded = () => {
-        const database = request.result;
-        if (!database.objectStoreNames.contains(STORE_NAME)) {
-          database.createObjectStore(STORE_NAME);
+        if (!request.result.objectStoreNames.contains(STORE_NAME)) {
+          request.result.createObjectStore(STORE_NAME);
         }
       };
-
       request.onsuccess = () => {
         db = request.result;
-        resolve(db);
+        resolve();
       };
-
       request.onerror = () => reject(request.error);
-      request.onblocked = () => reject(new Error("The local database is blocked by another open BrainDock tab."));
+      request.onblocked = () => reject(new Error("Close other BrainDock tabs and reload."));
     });
   }
 
@@ -73,9 +76,9 @@
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, "readwrite");
       tx.objectStore(STORE_NAME).put(value, key);
-      tx.oncomplete = () => resolve();
+      tx.oncomplete = resolve;
       tx.onerror = () => reject(tx.error);
-      tx.onabort = () => reject(tx.error || new Error("Database write was aborted."));
+      tx.onabort = () => reject(tx.error || new Error("Database write failed."));
     });
   }
 
@@ -94,108 +97,113 @@
   }
 
   function updateStorageStatus() {
-    const captureCount = state.captures.length;
-    const taskCount = state.tasks.length;
     $("storageStatus").textContent =
-      `${captureCount} capture${captureCount === 1 ? "" : "s"} and ${taskCount} task${taskCount === 1 ? "" : "s"} stored on this device`;
+      `${state.captures.length} capture${state.captures.length === 1 ? "" : "s"} and ` +
+      `${state.tasks.length} task${state.tasks.length === 1 ? "" : "s"} stored on this device`;
   }
 
-  function populateProjectSelects() {
-    ["projectSelect", "taskProject", "recordingProject"].forEach((id) => {
+  function populateProjects() {
+    ["projectSelect", "recordingProject", "taskProject"].forEach((id) => {
       const select = $(id);
-      if (!select) return;
-      const current = select.value;
+      const previous = select.value;
       select.innerHTML = state.projects
-        .map((p) => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`)
+        .map(project => `<option value="${escapeHtml(project)}">${escapeHtml(project)}</option>`)
         .join("");
-      if (state.projects.includes(current)) select.value = current;
+      if (state.projects.includes(previous)) select.value = previous;
     });
   }
 
+  function captureCard(capture) {
+    const audio = capture.audioDataUrl
+      ? `<audio controls preload="metadata" src="${escapeHtml(capture.audioDataUrl)}"></audio>`
+      : "";
+    return `<article class="item">
+      <h3>${escapeHtml(capture.title)}</h3>
+      ${capture.text ? `<p>${escapeHtml(capture.text)}</p>` : ""}
+      ${audio}
+      <div class="meta">
+        <span class="badge">${escapeHtml(capture.project)}</span>
+        <span>${formatDate(capture.createdAt)}</span>
+        <span>${escapeHtml(capture.kind)}</span>
+      </div>
+      <div class="item-actions">
+        <button type="button" data-task-from="${capture.id}">Make task</button>
+        <button type="button" data-delete-capture="${capture.id}">Delete</button>
+      </div>
+    </article>`;
+  }
+
+  function renderCaptures() {
+    const query = $("searchInput").value.trim().toLowerCase();
+    const captures = [...state.captures]
+      .filter(item => !query || [item.title, item.text, item.project]
+        .some(value => String(value || "").toLowerCase().includes(query)))
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    $("recentList").innerHTML = captures.length
+      ? captures.slice(0, 5).map(captureCard).join("")
+      : `<div class="empty">Nothing captured yet.</div>`;
+
+    $("inboxList").innerHTML = captures.length
+      ? captures.map(captureCard).join("")
+      : `<div class="empty">Your inbox is empty.</div>`;
+  }
+
+  function renderTasks() {
+    const tasks = [...state.tasks].sort((a, b) => Number(a.done) - Number(b.done));
+    $("taskList").innerHTML = tasks.length ? tasks.map(task => `
+      <article class="item task-row ${task.done ? "done" : ""}">
+        <input type="checkbox" data-toggle-task="${task.id}" ${task.done ? "checked" : ""}>
+        <div>
+          <h3>${escapeHtml(task.title)}</h3>
+          <div class="meta">
+            <span class="badge">${escapeHtml(task.project)}</span>
+            ${task.due ? `<span>Due ${escapeHtml(task.due)}</span>` : ""}
+          </div>
+          <div class="item-actions">
+            <button type="button" data-delete-task="${task.id}">Delete</button>
+          </div>
+        </div>
+      </article>`).join("") : `<div class="empty">No tasks yet.</div>`;
+  }
+
+  function renderProjects() {
+    $("projectList").innerHTML = state.projects.map(project => {
+      const captures = state.captures.filter(item => item.project === project).length;
+      const tasks = state.tasks.filter(item => item.project === project && !item.done).length;
+      return `<article class="project-card">
+        <h3>${escapeHtml(project)}</h3>
+        <p>${captures} captures · ${tasks} open tasks</p>
+      </article>`;
+    }).join("");
+  }
+
   function renderAll() {
-    populateProjectSelects();
+    populateProjects();
     renderCaptures();
     renderTasks();
     renderProjects();
     updateStorageStatus();
   }
 
-  function captureHtml(item) {
-    const text = item.text ? `<p>${escapeHtml(item.text)}</p>` : "";
-    const audio = item.audioDataUrl
-      ? `<audio controls src="${escapeHtml(item.audioDataUrl)}"></audio>`
-      : "";
-    return `<article class="item">
-      <h4>${escapeHtml(item.title || "Untitled capture")}</h4>
-      ${text}
-      ${audio}
-      <div class="meta">
-        <span class="badge">${escapeHtml(item.project || "Inbox")}</span>
-        <span>${formatDate(item.createdAt)}</span>
-        <span>${escapeHtml(item.kind || "note")}</span>
-      </div>
-      <div class="item-actions">
-        <button data-task-from="${item.id}">Make task</button>
-        <button data-delete-capture="${item.id}">Delete</button>
-      </div>
-    </article>`;
+  function switchScreen(screenId) {
+    document.querySelectorAll(".screen").forEach(screen => {
+      screen.classList.toggle("active", screen.id === screenId);
+    });
+    document.querySelectorAll(".tab").forEach(tab => {
+      tab.classList.toggle("active", tab.dataset.screen === screenId);
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function renderCaptures() {
-    const query = safeText($("searchInput")?.value).toLowerCase();
-    const filtered = state.captures
-      .filter((item) => !query || [item.title, item.text, item.project].some(v => safeText(v).toLowerCase().includes(query)))
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-    $("recentList").className = filtered.length ? "list" : "list empty-state";
-    $("recentList").innerHTML = filtered.length
-      ? filtered.slice(0, 5).map(captureHtml).join("")
-      : "Nothing captured yet.";
-
-    $("inboxList").className = filtered.length ? "list" : "list empty-state";
-    $("inboxList").innerHTML = filtered.length
-      ? filtered.map(captureHtml).join("")
-      : "Your inbox is empty.";
-  }
-
-  function renderTasks() {
-    const tasks = [...state.tasks].sort((a, b) => Number(a.done) - Number(b.done));
-    $("taskList").className = tasks.length ? "list" : "list empty-state";
-    $("taskList").innerHTML = tasks.length ? tasks.map((task) => `
-      <article class="item task-row ${task.done ? "done" : ""}">
-        <input type="checkbox" data-toggle-task="${task.id}" ${task.done ? "checked" : ""} aria-label="Complete task">
-        <div>
-          <h4>${escapeHtml(task.title)}</h4>
-          <div class="meta">
-            <span class="badge">${escapeHtml(task.project)}</span>
-            ${task.due ? `<span>Due ${escapeHtml(task.due)}</span>` : ""}
-          </div>
-          <div class="item-actions">
-            <button data-delete-task="${task.id}">Delete</button>
-          </div>
-        </div>
-      </article>`).join("") : "No tasks yet.";
-  }
-
-  function renderProjects() {
-    $("projectList").innerHTML = state.projects.map((project) => {
-      const count = state.captures.filter((c) => c.project === project).length;
-      const tasks = state.tasks.filter((t) => t.project === project && !t.done).length;
-      return `<article class="project-card">
-        <h3>${escapeHtml(project)}</h3>
-        <p>${count} captures · ${tasks} open tasks</p>
-      </article>`;
-    }).join("");
-  }
-
-  async function addCapture({ title, text, project, kind = "note", audioDataUrl = "" }) {
+  async function addCapture(data) {
     state.captures.push({
-      id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-      title: safeText(title) || "Untitled capture",
-      text: safeText(text),
-      project: safeText(project) || state.projects[0],
-      kind,
-      audioDataUrl,
+      id: uid(),
+      title: data.title.trim() || "Untitled capture",
+      text: data.text?.trim() || "",
+      project: data.project || state.projects[0],
+      kind: data.kind || "note",
+      audioDataUrl: data.audioDataUrl || "",
       createdAt: new Date().toISOString()
     });
     await saveState();
@@ -203,72 +211,68 @@
   }
 
   async function addTask(title, project, due = "") {
-    const cleanTitle = safeText(title);
+    const cleanTitle = title.trim();
     if (!cleanTitle) return;
     state.tasks.push({
-      id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+      id: uid(),
       title: cleanTitle,
-      project: safeText(project) || state.projects[0],
+      project: project || state.projects[0],
       due,
-      done: false
+      done: false,
+      createdAt: new Date().toISOString()
     });
     await saveState();
     renderAll();
   }
 
-  function switchScreen(screenId) {
-    document.querySelectorAll(".screen").forEach((el) => el.classList.toggle("active", el.id === screenId));
-    document.querySelectorAll(".tabbar button").forEach((el) => el.classList.toggle("active", el.dataset.screen === screenId));
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
   async function startRecording() {
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      alert("Audio recording is not supported in this browser. Safari on a current iPhone or Chrome on desktop should work.");
-      return;
+      throw new Error("This browser does not support audio recording.");
     }
+    recordingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const preferred = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"]
+    const supportedType = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"]
       .find(type => MediaRecorder.isTypeSupported?.(type));
 
-    recorder = preferred ? new MediaRecorder(stream, { mimeType: preferred }) : new MediaRecorder(stream);
+    recorder = supportedType
+      ? new MediaRecorder(recordingStream, { mimeType: supportedType })
+      : new MediaRecorder(recordingStream);
+
     chunks = [];
-
-    recorder.ondataavailable = (event) => {
-      if (event.data && event.data.size > 0) chunks.push(event.data);
+    recorder.ondataavailable = event => {
+      if (event.data?.size) chunks.push(event.data);
     };
-
-    recorder.onstop = async () => {
-      audioBlob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
-      const url = URL.createObjectURL(audioBlob);
-      $("playback").src = url;
+    recorder.onstop = () => {
+      pendingAudioBlob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+      $("playback").src = URL.createObjectURL(pendingAudioBlob);
       $("playback").classList.remove("hidden");
-      stream.getTracks().forEach((track) => track.stop());
       $("recordingTitle").value = `Voice note ${new Date().toLocaleString()}`;
       $("recordingDialog").showModal();
+      recordingStream?.getTracks().forEach(track => track.stop());
+      recordingStream = null;
     };
 
     recorder.start();
-    elapsed = 0;
+    recordingStartedAt = Date.now();
     $("recordBtn").classList.add("recording");
     $("recordStatus").textContent = "Recording… tap to stop";
     updateTimer();
-    timerId = setInterval(updateTimer, 1000);
+    timerInterval = setInterval(updateTimer, 250);
   }
 
   function stopRecording() {
     if (recorder?.state === "recording") recorder.stop();
-    clearInterval(timerId);
+    clearInterval(timerInterval);
+    timerInterval = null;
     $("recordBtn").classList.remove("recording");
     $("recordStatus").textContent = "Tap to record";
   }
 
   function updateTimer() {
-    const minutes = String(Math.floor(elapsed / 60)).padStart(2, "0");
-    const seconds = String(elapsed % 60).padStart(2, "0");
+    const totalSeconds = Math.floor((Date.now() - recordingStartedAt) / 1000);
+    const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
+    const seconds = String(totalSeconds % 60).padStart(2, "0");
     $("timer").textContent = `${minutes}:${seconds}`;
-    elapsed += 1;
   }
 
   function blobToDataUrl(blob) {
@@ -283,27 +287,25 @@
   async function exportBackup() {
     const backup = {
       format: "BrainDock Backup",
-      version: 2,
+      version: 1,
       exportedAt: new Date().toISOString(),
       state
     };
-
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
-    const filename = `BrainDock-Backup-${new Date().toISOString().slice(0, 10)}.json`;
+    const filename = `BrainDock-Backup-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
     const file = new File([blob], filename, { type: "application/json" });
 
     try {
       if (navigator.canShare?.({ files: [file] })) {
         await navigator.share({
           title: "BrainDock Backup",
-          text: "Save this file to iCloud Drive in the Files app.",
+          text: "Save this backup to iCloud Drive.",
           files: [file]
         });
         return;
       }
     } catch (error) {
       if (error.name === "AbortError") return;
-      console.warn("Share sheet failed, falling back to download:", error);
     }
 
     const url = URL.createObjectURL(blob);
@@ -318,95 +320,103 @@
 
   async function restoreBackup(file) {
     if (!file) return;
-
     let parsed;
     try {
       parsed = JSON.parse(await file.text());
     } catch {
-      throw new Error("That file is not a valid BrainDock JSON backup.");
+      throw new Error("That is not a valid BrainDock backup file.");
     }
 
-    const imported = parsed?.state ?? parsed;
-    if (!Array.isArray(imported.projects) || !Array.isArray(imported.captures) || !Array.isArray(imported.tasks)) {
-      throw new Error("This does not appear to be a compatible BrainDock backup.");
+    const imported = parsed.state || parsed;
+    if (!Array.isArray(imported.projects) ||
+        !Array.isArray(imported.captures) ||
+        !Array.isArray(imported.tasks)) {
+      throw new Error("That file does not contain compatible BrainDock data.");
     }
 
-    const proceed = confirm(
-      `Restore ${imported.captures.length} captures and ${imported.tasks.length} tasks? This will replace the current local database.`
-    );
-    if (!proceed) return;
+    if (!confirm(
+      `Replace this device's data with ${imported.captures.length} captures and ${imported.tasks.length} tasks?`
+    )) return;
 
     state = imported;
     await saveState();
     renderAll();
-    alert("BrainDock backup restored.");
+    alert("Backup restored.");
+  }
+
+  function showFatal(error) {
+    console.error(error);
+    $("fatalMessage").textContent = error?.message || String(error);
+    $("fatalError").classList.remove("hidden");
   }
 
   function bindEvents() {
-    document.querySelectorAll(".tabbar button").forEach((button) => {
-      button.addEventListener("click", () => switchScreen(button.dataset.screen));
+    document.querySelectorAll(".tab").forEach(tab => {
+      tab.addEventListener("click", () => switchScreen(tab.dataset.screen));
     });
 
     $("recordBtn").addEventListener("click", async () => {
-      if (recorder?.state === "recording") stopRecording();
-      else {
-        try {
-          await startRecording();
-        } catch (error) {
-          console.error(error);
-          alert("BrainDock could not start recording. Check microphone permissions and make sure the site is using HTTPS.");
-        }
+      try {
+        if (recorder?.state === "recording") stopRecording();
+        else await startRecording();
+      } catch (error) {
+        alert(`${error.message} Check microphone permission and make sure the site uses HTTPS.`);
       }
     });
 
     $("saveNoteBtn").addEventListener("click", async () => {
-      const text = safeText($("quickNote").value);
+      const text = $("quickNote").value.trim();
       if (!text) return;
       await addCapture({
-        title: text.length > 60 ? `${text.slice(0, 57)}…` : text,
+        title: text.length > 64 ? `${text.slice(0, 61)}…` : text,
         text,
-        project: $("projectSelect").value
+        project: $("projectSelect").value,
+        kind: "note"
       });
       $("quickNote").value = "";
     });
 
-    $("saveRecordingBtn").addEventListener("click", async () => {
-      if (!audioBlob) return;
-      const dataUrl = await blobToDataUrl(audioBlob);
+    $("recordingForm").addEventListener("submit", async event => {
+      event.preventDefault();
+      if (!pendingAudioBlob) return;
+      const audioDataUrl = await blobToDataUrl(pendingAudioBlob);
       await addCapture({
         title: $("recordingTitle").value,
-        text: "",
         project: $("recordingProject").value,
         kind: "recording",
-        audioDataUrl: dataUrl
+        audioDataUrl
       });
-      audioBlob = null;
-      $("recordingDialog").close();
+      pendingAudioBlob = null;
       $("playback").classList.add("hidden");
+      $("playback").removeAttribute("src");
       $("timer").textContent = "00:00";
+      $("recordingDialog").close();
     });
 
     $("cancelRecordingBtn").addEventListener("click", () => {
-      audioBlob = null;
-      $("recordingDialog").close();
+      pendingAudioBlob = null;
       $("playback").classList.add("hidden");
+      $("playback").removeAttribute("src");
       $("timer").textContent = "00:00";
+      $("recordingDialog").close();
     });
 
-    $("saveTaskBtn").addEventListener("click", async () => {
+    $("taskForm").addEventListener("submit", async event => {
+      event.preventDefault();
       await addTask($("taskTitle").value, $("taskProject").value, $("taskDue").value);
       $("taskTitle").value = "";
       $("taskDue").value = "";
       $("taskDialog").close();
     });
 
+    $("cancelTaskBtn").addEventListener("click", () => $("taskDialog").close());
     $("addTaskBtn").addEventListener("click", () => $("taskDialog").showModal());
 
     $("addProjectBtn").addEventListener("click", async () => {
-      const project = prompt("Project name:");
-      const clean = safeText(project);
-      if (!clean || state.projects.includes(clean)) return;
-      state.projects.push(clean);
+      const value = prompt("Project name:");
+      const project = value?.trim();
+      if (!project || state.projects.includes(project)) return;
+      state.projects.push(project);
       await saveState();
       renderAll();
     });
@@ -414,39 +424,38 @@
     $("searchInput").addEventListener("input", renderCaptures);
 
     $("clearAllBtn").addEventListener("click", async () => {
-      if (!confirm("Delete all BrainDock captures and tasks from this device?")) return;
+      if (!confirm("Delete every capture and task from this device?")) return;
       state.captures = [];
       state.tasks = [];
       await saveState();
       renderAll();
     });
 
-    $("backupBtn").addEventListener("click", exportBackup);
+    $("backupBtn").addEventListener("click", () => {
+      exportBackup().catch(showFatal);
+    });
 
     $("restoreBtn").addEventListener("click", () => $("restoreFile").click());
 
-    $("restoreFile").addEventListener("change", async (event) => {
-      try {
-        await restoreBackup(event.target.files?.[0]);
-      } catch (error) {
-        console.error(error);
-        alert(error.message);
-      } finally {
-        event.target.value = "";
-      }
+    $("restoreFile").addEventListener("change", event => {
+      restoreBackup(event.target.files?.[0])
+        .catch(error => alert(error.message))
+        .finally(() => { event.target.value = ""; });
     });
 
-    document.addEventListener("click", async (event) => {
+    $("reloadBtn").addEventListener("click", () => location.reload());
+
+    document.addEventListener("click", async event => {
       const captureId = event.target.dataset.deleteCapture;
       if (captureId) {
-        state.captures = state.captures.filter((item) => item.id !== captureId);
+        state.captures = state.captures.filter(item => item.id !== captureId);
         await saveState();
         renderAll();
       }
 
-      const taskCaptureId = event.target.dataset.taskFrom;
-      if (taskCaptureId) {
-        const capture = state.captures.find((item) => item.id === taskCaptureId);
+      const sourceId = event.target.dataset.taskFrom;
+      if (sourceId) {
+        const capture = state.captures.find(item => item.id === sourceId);
         if (capture) {
           $("taskTitle").value = capture.title;
           $("taskProject").value = capture.project;
@@ -456,25 +465,24 @@
 
       const taskId = event.target.dataset.deleteTask;
       if (taskId) {
-        state.tasks = state.tasks.filter((item) => item.id !== taskId);
+        state.tasks = state.tasks.filter(item => item.id !== taskId);
         await saveState();
         renderAll();
       }
     });
 
-    document.addEventListener("change", async (event) => {
+    document.addEventListener("change", async event => {
       const taskId = event.target.dataset.toggleTask;
-      if (taskId) {
-        const task = state.tasks.find((item) => item.id === taskId);
-        if (task) {
-          task.done = event.target.checked;
-          await saveState();
-          renderAll();
-        }
+      if (!taskId) return;
+      const task = state.tasks.find(item => item.id === taskId);
+      if (task) {
+        task.done = event.target.checked;
+        await saveState();
+        renderAll();
       }
     });
 
-    window.addEventListener("beforeinstallprompt", (event) => {
+    window.addEventListener("beforeinstallprompt", event => {
       event.preventDefault();
       deferredInstallPrompt = event;
       $("installBtn").classList.remove("hidden");
@@ -493,32 +501,18 @@
     if (!("indexedDB" in window)) {
       throw new Error("This browser does not support IndexedDB.");
     }
-
     await openDatabase();
     await loadState();
     bindEvents();
     renderAll();
 
-    if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-      navigator.serviceWorker.register("./sw.js").catch((error) => {
-        console.warn("Service worker could not be registered:", error);
-      });
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("./sw.js").catch(console.warn);
     }
   }
 
-  window.addEventListener("error", (event) => {
-    $("fatalMessage").textContent = event.message || "Unknown startup error.";
-    $("fatalError").classList.remove("hidden");
-  });
+  window.addEventListener("error", event => showFatal(event.error || new Error(event.message)));
+  window.addEventListener("unhandledrejection", event => showFatal(event.reason));
 
-  window.addEventListener("unhandledrejection", (event) => {
-    $("fatalMessage").textContent = event.reason?.message || String(event.reason || "Unknown promise error.");
-    $("fatalError").classList.remove("hidden");
-  });
-
-  init().catch((error) => {
-    console.error(error);
-    $("fatalMessage").textContent = error.message || String(error);
-    $("fatalError").classList.remove("hidden");
-  });
+  init().catch(showFatal);
 })();
