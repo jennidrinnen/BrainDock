@@ -1,159 +1,20 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#f2f2f7">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="BrainDock">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#526457" />
+  <meta name="description" content="BrainDock — Your second brain, without the clutter." />
   <title>BrainDock</title>
-  <link rel="manifest" href="./manifest.json">
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+  <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <header class="topbar">
-    <div>
-      <h1>BrainDock</h1>
-      <p>Capture the thought. Sort it later.</p>
-    </div>
-    <div class="top-actions">
-      <button id="backupBtn" class="secondary">Backup</button>
-      <button id="restoreBtn" class="secondary">Restore</button>
-      <button id="installBtn" class="secondary hidden">Install</button>
-      <input id="restoreFile" type="file" accept=".json,application/json" class="hidden">
-    </div>
-  </header>
-
-  <main>
-    <section id="home" class="screen active">
-      <div class="card recording-card">
-        <div class="recording-header">
-          <div>
-            <h2>Voice capture</h2>
-            <p id="recordingHelp">Tap once to start. Tap again to stop.</p>
-          </div>
-          <span id="recordingBadge" class="badge">Ready</span>
-        </div>
-        <button id="recordBtn" class="record-btn" type="button" aria-label="Start recording">
-          <span id="recordDot" aria-hidden="true">●</span>
-          <span id="recordStatus">Start recording</span>
-        </button>
-        <div id="timer" class="timer">00:00</div>
-        <audio id="playback" controls class="hidden"></audio>
-        <div id="recordingActions" class="recording-actions hidden">
-          <button id="discardPreviewBtn" class="secondary" type="button">Discard</button>
-          <button id="savePreviewBtn" class="primary" type="button">Save recording</button>
-        </div>
-      </div>
-
-      <div class="card storage-card">
-        <div class="storage-copy">
-          <h2>Storage</h2>
-          <p id="storageStatus">Starting local database…</p>
-          <p id="storageUsage" class="storage-usage">Calculating storage use…</p>
-          <div class="storage-meter" aria-hidden="true">
-            <span id="storageMeterFill"></span>
-          </div>
-        </div>
-        <span class="badge">On this device</span>
-      </div>
-
-      <div class="card">
-        <h2>Quick capture</h2>
-        <textarea id="quickNote" rows="4" placeholder="Type a thought, task, reminder, or idea…"></textarea>
-        <div class="form-row">
-          <select id="projectSelect"></select>
-          <button id="saveNoteBtn" class="primary" type="button">Save</button>
-        </div>
-      </div>
-
-      <div class="section-head">
-        <h2>Recent captures</h2>
-        <button id="clearAllBtn" class="text-button danger" type="button">Clear all</button>
-      </div>
-      <div id="recentList" class="list"></div>
-    </section>
-
-    <section id="inbox" class="screen">
-      <div class="section-head">
-        <h2>Inbox</h2>
-      </div>
-      <input id="searchInput" class="search" type="search" placeholder="Search captures…">
-      <div id="inboxList" class="list"></div>
-    </section>
-
-    <section id="tasks" class="screen">
-      <div class="section-head">
-        <h2>Tasks</h2>
-        <button id="addTaskBtn" class="primary-small" type="button">+ Add</button>
-      </div>
-      <div id="taskList" class="list"></div>
-    </section>
-
-    <section id="projects" class="screen">
-      <div class="section-head">
-        <h2>Projects</h2>
-        <button id="addProjectBtn" class="primary-small" type="button">+ Add</button>
-      </div>
-      <div id="projectList" class="project-grid"></div>
-    </section>
-  </main>
-
-  <nav class="tabbar" aria-label="Main navigation">
-    <button class="tab active" data-screen="home" type="button">Home</button>
-    <button class="tab" data-screen="inbox" type="button">Inbox</button>
-    <button class="tab" data-screen="tasks" type="button">Tasks</button>
-    <button class="tab" data-screen="projects" type="button">Projects</button>
-  </nav>
-
-  <dialog id="recordingDialog">
-    <form id="recordingForm">
-      <h2>Save recording</h2>
-      <label>
-        Title
-        <input id="recordingTitle" maxlength="120" required>
-      </label>
-      <label>
-        Project
-        <select id="recordingProject"></select>
-      </label>
-      <div class="dialog-actions">
-        <button id="cancelRecordingBtn" class="secondary" type="button">Discard</button>
-        <button id="saveRecordingBtn" class="primary" type="submit">Save</button>
-      </div>
-    </form>
-  </dialog>
-
-  <dialog id="taskDialog">
-    <form id="taskForm">
-      <h2>New task</h2>
-      <label>
-        Task
-        <input id="taskTitle" maxlength="140" required>
-      </label>
-      <label>
-        Due date
-        <input id="taskDue" type="date">
-      </label>
-      <label>
-        Project
-        <select id="taskProject"></select>
-      </label>
-      <div class="dialog-actions">
-        <button id="cancelTaskBtn" class="secondary" type="button">Cancel</button>
-        <button class="primary" type="submit">Save task</button>
-      </div>
-    </form>
-  </dialog>
-
-  <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
-
-  <div id="fatalError" class="fatal hidden" role="alert">
-    <h2>BrainDock could not start</h2>
-    <p id="fatalMessage"></p>
-    <button id="reloadBtn" class="primary" type="button">Reload</button>
-  </div>
-
-  <script src="./app.js" defer></script>
+  <div id="app" aria-live="polite"></div>
+  <input id="restore-file" type="file" accept=".json,application/json" hidden />
+  <input id="attachment-file" type="file" multiple hidden />
+  <script src="./app.js"></script>
 </body>
 </html>

@@ -1,25 +1,23 @@
-# BrainDock Version 1.1
+# BrainDock 2.0 Preview
 
-## Improvements
+Upload every file and folder in this package to the root of your GitHub Pages repository.
 
-- Clear recording, preview, save, and discard states
-- Confirmation messages for notes, recordings, tasks, backups, restores, and deletions
-- Estimated local storage usage
-- Automatic timestamps
-- Stable newest-first capture sorting
-- Open tasks first, followed by due date
-- Updated service-worker cache version
-- Existing backup and restore behavior preserved
+Important:
+- Keep the `icons` folder intact.
+- Replace the existing `index.html`, `styles.css`, `app.js`, `manifest.webmanifest`, and `sw.js`.
+- After GitHub Pages finishes deploying, refresh the site.
+- If an older version remains visible, clear site data or unregister the old service worker.
 
-## Upload to GitHub
+What works:
+- Responsive Mac and mobile layouts
+- Project workspaces
+- Notes, tasks, recordings, and file attachments
+- Search
+- Timeline
+- Recently Deleted with 30-day retention
+- Timestamped backups
+- Merge and replace restore
+- Offline PWA installation
 
-Replace these files in the repository root:
-
-- index.html
-- app.js
-- styles.css
-- manifest.json
-- sw.js
-- README.md
-
-GitHub Pages redeploys automatically. Devices showing the old version may need the page cache cleared once.
+Current limitation:
+Data is local to each browser/device. Mac and phone do not sync yet.
