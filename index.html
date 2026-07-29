@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#f2f2f7" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="BrainDock" />
+  <title>BrainDock</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div>
+        <h1>BrainDock</h1>
+        <p>Capture the thought. Sort it later.</p>
+      </div>
+      <div class="top-actions">
+        <button id="backupBtn" class="ghost">Backup</button>
+        <button id="restoreBtn" class="ghost">Restore</button>
+        <button id="installBtn" class="ghost hidden">Install</button>
+        <input id="restoreFile" type="file" accept=".json,application/json" class="hidden" />
+      </div>
+    </header>
+
+    <main>
+      <section id="home" class="screen active">
+        <div class="hero card">
+          <button id="recordBtn" class="record-button" aria-label="Start recording">
+            <span id="recordIcon">●</span>
+          </button>
+          <h2 id="recordStatus">Tap to record</h2>
+          <p id="timer">00:00</p>
+          <audio id="playback" controls class="hidden"></audio>
+        </div>
+
+        <div class="card storage-card">
+          <div>
+            <h3>Storage</h3>
+            <p id="storageStatus">Checking local database…</p>
+          </div>
+          <span class="badge">IndexedDB</span>
+        </div>
+
+        <div class="card">
+          <h3>Quick capture</h3>
+          <textarea id="quickNote" placeholder="Type a thought, task, reminder, or idea…"></textarea>
+          <div class="row">
+            <select id="projectSelect"></select>
+            <button id="saveNoteBtn" class="primary">Save</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="section-title">
+            <h3>Recent captures</h3>
+            <button id="clearAllBtn" class="danger-link">Clear all</button>
+          </div>
+          <div id="recentList" class="list empty-state">Nothing captured yet.</div>
+        </div>
+      </section>
+
+      <section id="inbox" class="screen">
+        <div class="section-title">
+          <div>
+            <h2>Inbox</h2>
+            <p>Unsorted thoughts and recordings</p>
+          </div>
+        </div>
+        <input id="searchInput" class="search" placeholder="Search captures…" />
+        <div id="inboxList" class="list empty-state">Your inbox is empty.</div>
+      </section>
+
+      <section id="tasks" class="OUGHTS</div>
+            <h2>Inbox</h2>
+          </div>
+          <button id="clearInboxBtn" class="text-btn danger">Clear</button>
+        </div>
+        <div id="inboxList" class="list"></div>
+      </section>
+
+      <section id="tasks" class="screen">
+        <div class="section-head">
+          <div>
+            <div class="eyebrow">THINGS FUTURE YOU OWES</div>
+            <h2>Tasks</h2>
+          </div>
+          <button id="addTaskBtn" class="primary-small">+ Add</button>
+        </div>
+        <div id="taskList" class="list"></div>
+      </section>
+
+      <section id="projects" class="screen">
+        <div class="section-head">
+          <div>
+            <div class="eyebrow">CONTAINERS FOR CHAOS</div>
+            <h2>Projects</h2>
+          </div>
+          <button id="addProjectBtn" class="primary-small">+ Add</button>
+        </div>
+        <div id="projectGrid" class="project-grid"></div>
+      </section>
+    </main>
+
+    <nav class="tabbar">
+      <button class="tab active" data-nav="home">Home</button>
+      <button class="tab" data-nav="inbox">Inbox</button>
+      <button class="tab" data-nav="tasks">Tasks</button>
+      <button class="tab" data-nav="projects">Projects</button>
+    </nav>
+  </div>
+
+  <dialog id="captureDialog">
+    <form method="dialog" id="captureForm">
+      <h3>Save capture</h3>
+      <label>Title
+        <input id="captureTitle" maxlength="100" required />
+      </label>
+      <label>Notes
+        <textarea id="captureNotes" rows="5" placeholder="Add context or paste a transcript"></textarea>
+      </label>
+      <label>Project
+        <select id="captureProject"></select>
+      </label>
+      <div class="dialog-actions">
+        <button value="cancel" class="secondary">Cancel</button>
+        <button id="saveCaptureBtn" value="default" class="primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="taskDialog">
+    <form method="dialog" id="taskForm">
+      <h3>New task</h3>
+      <label>Task
+        <input id="taskTitle" maxlength="120" required />
+      </label>
+      <label>Due date
+        <input id="taskDue" type="date" />
+      </label>
+      <label>Project
+        <select id="taskProject"></select>
+      </label>
+      <div class="dialog-actions">
+        <button value="cancel" class="secondary">Cancel</button>
+        <button id="saveTaskBtn" value="default" class="primary">Add task</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="fatalError" class="fatal hidden">
+    <h2>BrainDock could not start</h2>
+    <p id="fatalMessage"></p>
+    <button onclick="location.reload()" class="primary">Reload</button>
+  </div>
+
+  <script src="app.js" defer></script>
+</body>
+</html>

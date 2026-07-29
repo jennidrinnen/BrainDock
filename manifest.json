@@ -1,0 +1,10 @@
+{
+  "name": "BrainDock",
+  "short_name": "BrainDock",
+  "description": "Capture voice notes, organize thoughts, and manage tasks.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f2f2f7",
+  "theme_color": "#f2f2f7",
+  "icons": []
+}
