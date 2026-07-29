@@ -1,29 +1,19 @@
-# BrainDock Version 1 Fixed
+# BrainDock Version 1.1
 
-This version includes:
+## Improvements
 
-- Browser voice recording
-- Notes and recordings stored in IndexedDB
-- Projects and tasks
-- Full JSON backup
-- Full JSON restore
-- iPhone share sheet support for saving backups to iCloud Drive
-- GitHub Pages compatibility
-- Offline caching
-- Visible error reporting
+- Clear recording, preview, save, and discard states
+- Confirmation messages for notes, recordings, tasks, backups, restores, and deletions
+- Estimated local storage usage
+- Automatic timestamps
+- Stable newest-first capture sorting
+- Open tasks first, followed by due date
+- Updated service-worker cache version
+- Existing backup and restore behavior preserved
 
-## Backup behavior
+## Upload to GitHub
 
-Backup exports a complete snapshot of everything currently stored on the device.
-Each backup filename includes a date and time, so it does not overwrite earlier backups unless you manually choose the same filename.
-
-## Restore behavior
-
-Restore replaces the current local BrainDock database with the selected backup after confirmation.
-
-## Updating GitHub
-
-Upload and replace these files in the repository root:
+Replace these files in the repository root:
 
 - index.html
 - app.js
@@ -32,4 +22,4 @@ Upload and replace these files in the repository root:
 - sw.js
 - README.md
 
-After deployment, reload the site. If an old version remains cached, use a private browser tab once or clear the site's cached website data.
+GitHub Pages redeploys automatically. Devices showing the old version may need the page cache cleared once.

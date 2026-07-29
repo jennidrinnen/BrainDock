@@ -1,5 +1,5 @@
 
-const CACHE_NAME = "braindock-v1-fixed-20260728";
+const CACHE_NAME = "braindock-v1-1-20260728";
 const FILES = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.json"];
 
 self.addEventListener("install", event => {

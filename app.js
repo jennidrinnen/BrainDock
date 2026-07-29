@@ -33,6 +33,57 @@
       .replaceAll("'", "&#039;");
   }
 
+
+  function showToast(message, type = "success") {
+    const toast = document.createElement("div");
+    toast.className = `toast ${type === "error" ? "error" : ""}`;
+    toast.textContent = message;
+    $("toastRegion").appendChild(toast);
+    setTimeout(() => toast.remove(), 2800);
+  }
+
+  function formatBytes(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) return "0 KB";
+    const units = ["bytes", "KB", "MB", "GB"];
+    const unitIndex = Math.min(
+      Math.floor(Math.log(bytes) / Math.log(1024)),
+      units.length - 1
+    );
+    const value = bytes / Math.pow(1024, unitIndex);
+    return `${value.toFixed(unitIndex === 0 ? 0 : value >= 10 ? 1 : 2)} ${units[unitIndex]}`;
+  }
+
+  function estimateStateBytes() {
+    try {
+      return new Blob([JSON.stringify(state)]).size;
+    } catch {
+      return 0;
+    }
+  }
+
+  async function updateStorageUsage() {
+    const stateBytes = estimateStateBytes();
+    let usage = stateBytes;
+    let quota = 0;
+
+    try {
+      if (navigator.storage?.estimate) {
+        const estimate = await navigator.storage.estimate();
+        usage = Math.max(estimate.usage || 0, stateBytes);
+        quota = estimate.quota || 0;
+      }
+    } catch {
+      // Keep the local state estimate.
+    }
+
+    $("storageUsage").textContent = quota
+      ? `${formatBytes(usage)} used of approximately ${formatBytes(quota)} available`
+      : `${formatBytes(stateBytes)} used by BrainDock data`;
+
+    const percent = quota ? Math.min((usage / quota) * 100, 100) : 0;
+    $("storageMeterFill").style.width = `${Math.max(percent, stateBytes ? 1 : 0)}%`;
+  }
+
   function formatDate(value) {
     try {
       return new Intl.DateTimeFormat(undefined, {
@@ -100,6 +151,7 @@
     $("storageStatus").textContent =
       `${state.captures.length} capture${state.captures.length === 1 ? "" : "s"} and ` +
       `${state.tasks.length} task${state.tasks.length === 1 ? "" : "s"} stored on this device`;
+    updateStorageUsage();
   }
 
   function populateProjects() {
@@ -123,7 +175,7 @@
       ${audio}
       <div class="meta">
         <span class="badge">${escapeHtml(capture.project)}</span>
-        <span>${formatDate(capture.createdAt)}</span>
+        <time datetime="${escapeHtml(capture.createdAt)}">${formatDate(capture.createdAt)}</time>
         <span>${escapeHtml(capture.kind)}</span>
       </div>
       <div class="item-actions">
@@ -138,7 +190,11 @@
     const captures = [...state.captures]
       .filter(item => !query || [item.title, item.text, item.project]
         .some(value => String(value || "").toLowerCase().includes(query)))
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      .sort((a, b) => {
+        const timeDifference =
+          new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+        return timeDifference || String(b.id).localeCompare(String(a.id));
+      });
 
     $("recentList").innerHTML = captures.length
       ? captures.slice(0, 5).map(captureCard).join("")
@@ -150,7 +206,17 @@
   }
 
   function renderTasks() {
-    const tasks = [...state.tasks].sort((a, b) => Number(a.done) - Number(b.done));
+    const tasks = [...state.tasks].sort((a, b) => {
+      const completionDifference = Number(a.done) - Number(b.done);
+      if (completionDifference) return completionDifference;
+
+      const aDue = a.due || "9999-12-31";
+      const bDue = b.due || "9999-12-31";
+      const dueDifference = aDue.localeCompare(bDue);
+      if (dueDifference) return dueDifference;
+
+      return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+    });
     $("taskList").innerHTML = tasks.length ? tasks.map(task => `
       <article class="item task-row ${task.done ? "done" : ""}">
         <input type="checkbox" data-toggle-task="${task.id}" ${task.done ? "checked" : ""}>
@@ -208,6 +274,7 @@
     });
     await saveState();
     renderAll();
+    showToast(data.kind === "recording" ? "Recording saved" : "Note saved");
   }
 
   async function addTask(title, project, due = "") {
@@ -223,6 +290,7 @@
     });
     await saveState();
     renderAll();
+    showToast("Task saved");
   }
 
   async function startRecording() {
@@ -246,8 +314,8 @@
       pendingAudioBlob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
       $("playback").src = URL.createObjectURL(pendingAudioBlob);
       $("playback").classList.remove("hidden");
+      $("recordingActions").classList.remove("hidden");
       $("recordingTitle").value = `Voice note ${new Date().toLocaleString()}`;
-      $("recordingDialog").showModal();
       recordingStream?.getTracks().forEach(track => track.stop());
       recordingStream = null;
     };
@@ -255,7 +323,12 @@
     recorder.start();
     recordingStartedAt = Date.now();
     $("recordBtn").classList.add("recording");
-    $("recordStatus").textContent = "Recording… tap to stop";
+    $("recordBtn").setAttribute("aria-label", "Stop recording");
+    $("recordStatus").textContent = "Stop recording";
+    $("recordingBadge").textContent = "Recording";
+    $("recordingHelp").textContent = "Your voice is being captured on this device.";
+    $("recordingActions").classList.add("hidden");
+    $("playback").classList.add("hidden");
     updateTimer();
     timerInterval = setInterval(updateTimer, 250);
   }
@@ -265,7 +338,10 @@
     clearInterval(timerInterval);
     timerInterval = null;
     $("recordBtn").classList.remove("recording");
-    $("recordStatus").textContent = "Tap to record";
+    $("recordBtn").setAttribute("aria-label", "Start recording");
+    $("recordStatus").textContent = "Start recording";
+    $("recordingBadge").textContent = "Preview";
+    $("recordingHelp").textContent = "Review the recording, then save or discard it.";
   }
 
   function updateTimer() {
@@ -302,6 +378,7 @@
           text: "Save this backup to iCloud Drive.",
           files: [file]
         });
+        showToast("Backup complete");
         return;
       }
     } catch (error) {
@@ -316,6 +393,7 @@
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
+    showToast("Backup downloaded");
   }
 
   async function restoreBackup(file) {
@@ -341,7 +419,7 @@
     state = imported;
     await saveState();
     renderAll();
-    alert("Backup restored.");
+    showToast("Backup restored");
   }
 
   function showFatal(error) {
@@ -376,6 +454,24 @@
       $("quickNote").value = "";
     });
 
+
+    $("savePreviewBtn").addEventListener("click", () => {
+      if (!pendingAudioBlob) return;
+      $("recordingDialog").showModal();
+    });
+
+    $("discardPreviewBtn").addEventListener("click", () => {
+      pendingAudioBlob = null;
+      $("playback").pause();
+      $("playback").classList.add("hidden");
+      $("playback").removeAttribute("src");
+      $("recordingActions").classList.add("hidden");
+      $("timer").textContent = "00:00";
+      $("recordingBadge").textContent = "Ready";
+      $("recordingHelp").textContent = "Tap once to start. Tap again to stop.";
+      showToast("Recording discarded");
+    });
+
     $("recordingForm").addEventListener("submit", async event => {
       event.preventDefault();
       if (!pendingAudioBlob) return;
@@ -390,6 +486,9 @@
       $("playback").classList.add("hidden");
       $("playback").removeAttribute("src");
       $("timer").textContent = "00:00";
+      $("recordingActions").classList.add("hidden");
+      $("recordingBadge").textContent = "Ready";
+      $("recordingHelp").textContent = "Tap once to start. Tap again to stop.";
       $("recordingDialog").close();
     });
 
@@ -398,6 +497,9 @@
       $("playback").classList.add("hidden");
       $("playback").removeAttribute("src");
       $("timer").textContent = "00:00";
+      $("recordingActions").classList.add("hidden");
+      $("recordingBadge").textContent = "Ready";
+      $("recordingHelp").textContent = "Tap once to start. Tap again to stop.";
       $("recordingDialog").close();
     });
 
@@ -429,6 +531,7 @@
       state.tasks = [];
       await saveState();
       renderAll();
+      showToast("All captures and tasks deleted");
     });
 
     $("backupBtn").addEventListener("click", () => {
@@ -451,6 +554,7 @@
         state.captures = state.captures.filter(item => item.id !== captureId);
         await saveState();
         renderAll();
+        showToast("Capture deleted");
       }
 
       const sourceId = event.target.dataset.taskFrom;
@@ -468,6 +572,7 @@
         state.tasks = state.tasks.filter(item => item.id !== taskId);
         await saveState();
         renderAll();
+        showToast("Task deleted");
       }
     });
 

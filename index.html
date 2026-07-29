@@ -27,20 +27,35 @@
   <main>
     <section id="home" class="screen active">
       <div class="card recording-card">
-        <button id="recordBtn" class="record-btn" type="button">
-          <span id="recordDot">●</span>
-          <span id="recordStatus">Tap to record</span>
+        <div class="recording-header">
+          <div>
+            <h2>Voice capture</h2>
+            <p id="recordingHelp">Tap once to start. Tap again to stop.</p>
+          </div>
+          <span id="recordingBadge" class="badge">Ready</span>
+        </div>
+        <button id="recordBtn" class="record-btn" type="button" aria-label="Start recording">
+          <span id="recordDot" aria-hidden="true">●</span>
+          <span id="recordStatus">Start recording</span>
         </button>
         <div id="timer" class="timer">00:00</div>
         <audio id="playback" controls class="hidden"></audio>
+        <div id="recordingActions" class="recording-actions hidden">
+          <button id="discardPreviewBtn" class="secondary" type="button">Discard</button>
+          <button id="savePreviewBtn" class="primary" type="button">Save recording</button>
+        </div>
       </div>
 
       <div class="card storage-card">
-        <div>
+        <div class="storage-copy">
           <h2>Storage</h2>
           <p id="storageStatus">Starting local database…</p>
+          <p id="storageUsage" class="storage-usage">Calculating storage use…</p>
+          <div class="storage-meter" aria-hidden="true">
+            <span id="storageMeterFill"></span>
+          </div>
         </div>
-        <span class="badge">IndexedDB</span>
+        <span class="badge">On this device</span>
       </div>
 
       <div class="card">
@@ -130,6 +145,8 @@
       </div>
     </form>
   </dialog>
+
+  <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
   <div id="fatalError" class="fatal hidden" role="alert">
     <h2>BrainDock could not start</h2>
